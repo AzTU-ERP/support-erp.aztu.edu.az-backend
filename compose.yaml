@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: 'postgres:16-alpine'
+    environment:
+      - 'POSTGRES_DB=supportdb'
+      - 'POSTGRES_USER=myuser'
+      - 'POSTGRES_PASSWORD=secret'
+    ports:
+      # 5435 keeps this off hr-erp (5432), library-erp (5433) and alumni-erp (5434).
+      - '5435:5432'
+    volumes:
+      - 'pgdata:/var/lib/postgresql/data'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U myuser -d supportdb']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy   # Flyway migrates at startup, needs the DB ready
+    environment:
+      # Point the app at the compose service name instead of localhost.
+      - 'DB_URL=jdbc:postgresql://postgres:5432/supportdb'
+      - 'DB_USERNAME=myuser'
+      - 'DB_PASSWORD=secret'
+      - 'STORAGE_BASE_PATH=/app/support-storage'
+      - 'SERVER_PORT=8083'
+      # AUTH_BASE_URL / SERVICE_TOKEN are deliberately absent — supply them via an env file or
+      # the deployment secret store. Without AUTH_BASE_URL the block push is queued, not sent.
+    ports:
+      - '8083:8083'
+    volumes:
+      - 'support-storage:/app/support-storage'
+
+volumes:
+  pgdata:
+  support-storage:
