@@ -104,7 +104,9 @@ over rather than sitting one report away from the next block. Only a DEV lifts i
 
 - `module`/`section` must be a pair the catalogue currently offers — checked in `CatalogService`,
   and again by a composite foreign key in the schema.
-- Description: 10–2000 characters. Stored verbatim and rendered as plain text by the frontend.
+- Description: 10–2000 characters, counted in code points on the trimmed value — the same way
+  `ck_tickets_description_length` counts them, so the constraint is a backstop rather than the
+  thing users actually hit. Stored verbatim and rendered as plain text by the frontend.
 - Screenshots: at most 3 per ticket, at most 5 MB each, `image/png` / `image/jpeg` / `image/webp`
   only — checked by declared MIME **and** magic bytes, because the declared type is the uploader's
   claim. Filenames are sanitised to a display label and never used to build a path.
@@ -178,7 +180,10 @@ Everything is under `/api/support`. Bodies are camelCase and wrapped in the usua
 | `GET` | `/api/support/violations` | `blockedOnly`, `page`, `size` |
 | `POST` | `/api/support/violations/{userId}/unblock` | `userId` is the local `users_ref` id from the list |
 
-**Service token only** — `X-Service-Token`, not a bearer token
+**Service token only** — `X-Service-Token`, not a bearer token. The header grants the authority
+`SCOPE_support_internal`, deliberately not a `ROLE_`: the SSO filter turns every role name the auth
+service issues into `ROLE_<name>`, so gating on a role would mean a role called `service` was a way
+in. No bearer token can mint this authority, whatever it is called.
 
 | Method | Path |
 |---|---|
@@ -212,7 +217,7 @@ rolls each test back.
 | `SERVER_PORT` | `8083` | |
 | `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | `jdbc:postgresql://localhost:5435/supportdb`, `myuser`, `secret` | |
 | `STORAGE_BASE_PATH` | `./support-storage` | Where screenshots land |
-| `STORAGE_MAX_SIZE` | `5242880` | Bytes per screenshot |
+| `STORAGE_MAX_SIZE` | `5242880` | Bytes per screenshot. The least binding of three limits on the same number — `spring.servlet.multipart.max-file-size` rejects the part earlier and `ck_ticket_attachments_size` rejects the row later, so raising this alone does nothing. |
 | `CORS_ORIGINS` | `http://localhost:3000,https://erp.aztu.edu.az` | The shell |
 | `SSO_INTROSPECTION_URL` | *(empty)* | Set it to validate tokens remotely |
 | `SSO_DEV_MODE` | `true` | Local base64 tokens. **Turn off in production.** |
@@ -238,4 +243,7 @@ psql "$DB_URL" -f src/main/resources/db/undo/U1__init_support_schema.sql
 ```
 
 U2 refuses to run while any ticket exists, which is deliberate: the catalogue cannot be deleted
-out from under live tickets.
+out from under live tickets. Each script is wrapped in a single transaction so that refusal is
+honest — psql without `ON_ERROR_STOP` carries on after an error, which would otherwise delete the
+`flyway_schema_history` row while the seed data survived, leaving Flyway convinced the migration
+had never run and the next start re-inserting it into a unique-constraint violation.

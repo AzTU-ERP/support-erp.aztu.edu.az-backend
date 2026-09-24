@@ -70,4 +70,28 @@ public final class TicketRules {
     public static boolean isTerminal(String status) {
         return TicketStatus.TERMINAL.contains(status);
     }
+
+    /** Mirrors {@code ck_tickets_description_length}. */
+    public static final int DESCRIPTION_MIN_CHARS = 10;
+    public static final int DESCRIPTION_MAX_CHARS = 2000;
+
+    /**
+     * Trims the description and checks its length the way the schema does.
+     *
+     * <p>Bean validation on the DTO already ran, but on the raw string and in UTF-16 units, while
+     * the CHECK constraint counts code points on the value that actually lands. The two disagree
+     * at the edges — ten emoji are twenty units but ten characters, and a padded string shrinks
+     * once trimmed — and where they disagree the database wins, which would surface as a bare 409
+     * from the constraint. Deciding it here means an over-short description comes back as a 400
+     * that says so, and leaves the constraint as the backstop it should be.
+     */
+    public static String requireDescription(String raw) {
+        String trimmed = raw == null ? "" : raw.trim();
+        int characters = trimmed.codePointCount(0, trimmed.length());
+        if (characters < DESCRIPTION_MIN_CHARS || characters > DESCRIPTION_MAX_CHARS) {
+            throw new BadRequestException("The description must be between " + DESCRIPTION_MIN_CHARS
+                    + " and " + DESCRIPTION_MAX_CHARS + " characters (this one is " + characters + ")");
+        }
+        return trimmed;
+    }
 }

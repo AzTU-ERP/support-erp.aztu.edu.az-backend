@@ -24,6 +24,18 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class ServiceTokenFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Service-Token";
+
+    /**
+     * The authority a valid service token grants.
+     *
+     * <p>Deliberately not a {@code ROLE_}: {@link SsoAuthenticationFilter} turns every role string
+     * the auth service puts in a token into {@code ROLE_<name>}, so a role happening to be called
+     * "service" would otherwise let an ordinary bearer token into the internal surface. The auth
+     * service's role list is not this service's to control, and prefixing differently is what
+     * makes that collision impossible rather than merely unlikely.
+     */
+    public static final String AUTHORITY = "SCOPE_support_internal";
+
     private static final String PATH_PREFIX = "/api/support/internal/";
 
     private final String expectedToken;
@@ -38,7 +50,7 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
         if (request.getRequestURI().startsWith(PATH_PREFIX) && matches(request.getHeader(HEADER))) {
             SecurityContextHolder.getContext().setAuthentication(
                     UsernamePasswordAuthenticationToken.authenticated("auth-service", null,
-                            List.of(new SimpleGrantedAuthority("ROLE_service"))));
+                            List.of(new SimpleGrantedAuthority(AUTHORITY))));
         }
         chain.doFilter(request, response);
     }

@@ -59,7 +59,12 @@ public class FileStorageService {
             // nothing a caller typed can steer the path.
             String stored = UUID.randomUUID() + ImageSignature.extensionFor(mime);
             Path target = dir.resolve(stored);
-            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+            // Files.copy does not close the stream it is given. Multipart parts above the
+            // spool threshold are backed by a real file on Tomcat's temp dir, so leaving it open
+            // holds a descriptor until the cleaner runs — and on Windows also pins the temp file.
+            try (InputStream in = file.getInputStream()) {
+                Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+            }
             return new StoredFile(target.toString(), sanitizeName(file.getOriginalFilename()), mime, file.getSize());
         } catch (IOException e) {
             throw new BadRequestException("Failed to store file: " + e.getMessage());

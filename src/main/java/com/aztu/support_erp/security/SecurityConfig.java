@@ -26,8 +26,6 @@ import org.springframework.web.cors.CorsConfigurationSource;
 public class SecurityConfig {
 
     private static final String DEV = "dev";
-    /** Granted by {@link ServiceTokenFilter}, never by a token — see /api/support/internal/**. */
-    private static final String SERVICE = "service";
 
     private final SsoClient ssoClient;
     private final CorsConfigurationSource corsConfigurationSource;
@@ -53,7 +51,9 @@ public class SecurityConfig {
                 .requestMatchers("/error", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
                 // ---- service-to-service (the auth service asking about an account) ----
-                .requestMatchers("/api/support/internal/**").hasRole(SERVICE)
+                // An authority rather than a role, so no SSO role name can ever satisfy it —
+                // see ServiceTokenFilter.AUTHORITY.
+                .requestMatchers("/api/support/internal/**").hasAuthority(ServiceTokenFilter.AUTHORITY)
 
                 // ---- identity and the reportable surface ----
                 .requestMatchers(HttpMethod.GET, "/api/support/me").authenticated()

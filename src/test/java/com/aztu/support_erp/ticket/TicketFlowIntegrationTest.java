@@ -318,6 +318,27 @@ class TicketFlowIntegrationTest {
     }
 
     @Test
+    @DisplayName("An SSO role called 'service' does not open the internal surface")
+    void keepsTheInternalSurfaceOutOfTheRoleNamespace() throws Exception {
+        // The auth service decides its own role names, and SsoAuthenticationFilter turns each one
+        // into ROLE_<name>. If the internal surface were gated on a role, a role that happened to
+        // be called "service" would be a way in; it is gated on an authority no token can mint.
+        String impostor = devToken(UUID.randomUUID(), "service", "Impostor", "impostor@aztu.edu.az");
+
+        mvc.perform(get("/api/support/internal/users/" + reporterSso + "/block-status")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + impostor))
+                .andExpect(status().isForbidden());
+
+        // ...and the same for the other spellings Spring might be talked into accepting.
+        for (String role : new String[] {"SERVICE", "ROLE_service", "SCOPE_support_internal"}) {
+            mvc.perform(get("/api/support/internal/users/" + reporterSso + "/block-status")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer "
+                                    + devToken(UUID.randomUUID(), role, "Impostor", "i@aztu.edu.az")))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
     @DisplayName("Marking a ticket irrelevant without cancelling it is refused")
     void keepsIrrelevantTiedToCancellation() throws Exception {
         String id = openTicket(reporter(), "Bu esassiz sayila bilmez");

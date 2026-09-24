@@ -43,6 +43,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -115,7 +117,7 @@ public class TicketService {
         ticket.setUser(reporter);
         ticket.setModule(form.getModule());
         ticket.setSection(form.getSection());
-        ticket.setDescription(form.getDescription().trim());
+        ticket.setDescription(TicketRules.requireDescription(form.getDescription()));
         ticket.setStatus(TicketStatus.OPEN.code());
         ticket.setPageUrl(form.getPageUrl());
         ticket.setUserAgent(form.getUserAgent());
@@ -331,7 +333,16 @@ public class TicketService {
     }
 
     private void storeScreenshots(Ticket ticket, List<MultipartFile> screenshots) {
+        if (screenshots.isEmpty()) return;
+
         List<String> stored = new ArrayList<>();
+        // The bytes land outside the transaction, so a rollback takes the rows and leaves the
+        // files. The catch below covers a failure inside this loop; this covers everything after
+        // it — another statement in create(), or the commit itself. Registered before the loop
+        // and handed the same list it fills, so the callback sees whatever was written by the
+        // time the transaction actually ends.
+        deleteStoredFilesIfRolledBack(stored);
+
         try {
             for (MultipartFile file : screenshots) {
                 StoredFile saved = storage.storeScreenshot(file, ticket.getId().toString());
@@ -349,6 +360,24 @@ public class TicketService {
             stored.forEach(storage::deleteQuietly);
             throw ex;
         }
+    }
+
+    /**
+     * Removes the stored screenshots if the surrounding transaction does not commit.
+     *
+     * <p>A filesystem is not transactional, so writing to it inside a transaction is a dual write:
+     * the rows go back on a rollback and the bytes do not. This closes that gap for the only case
+     * that produces them.
+     */
+    private void deleteStoredFilesIfRolledBack(List<String> stored) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_COMMITTED) return;
+                stored.forEach(storage::deleteQuietly);
+            }
+        });
     }
 
     private void recordHistory(Ticket ticket, String from, String to, UserRef actor, String comment) {

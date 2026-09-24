@@ -132,6 +132,59 @@ class TicketRulesTest {
     }
 
     @Nested
+    @DisplayName("The description")
+    class Description {
+
+        @Test
+        void isTrimmedBeforeItIsMeasured() {
+            assertEquals("Davamiyyet", TicketRules.requireDescription("   Davamiyyet   "));
+        }
+
+        @Test
+        void acceptsTheShortestAndLongestAllowed() {
+            assertDoesNotThrow(() -> TicketRules.requireDescription("0123456789"));
+            assertDoesNotThrow(() -> TicketRules.requireDescription("x".repeat(2000)));
+        }
+
+        @Test
+        void rejectsOneCharacterShortOrLong() {
+            assertThrows(BadRequestException.class, () -> TicketRules.requireDescription("012345678"));
+            assertThrows(BadRequestException.class, () -> TicketRules.requireDescription("x".repeat(2001)));
+        }
+
+        @Test
+        void rejectsWhatIsOnlyLongEnoughBeforeTrimming() {
+            // Ten characters as sent, nine once trimmed — the value that would reach the column.
+            assertThrows(BadRequestException.class, () -> TicketRules.requireDescription(" 123456789"));
+        }
+
+        @Test
+        void countsCharactersTheWayTheSchemaDoes() {
+            // Five emoji are ten UTF-16 units but five characters. String.length() would have let
+            // this through, and the CHECK constraint would then have rejected it as a bare 409.
+            String fiveEmoji = "😀".repeat(5);
+            assertEquals(10, fiveEmoji.length());
+            assertThrows(BadRequestException.class, () -> TicketRules.requireDescription(fiveEmoji));
+
+            // Ten of them really are ten characters, and are accepted.
+            assertDoesNotThrow(() -> TicketRules.requireDescription("😀".repeat(10)));
+        }
+
+        @Test
+        void rejectsNothingAtAll() {
+            assertThrows(BadRequestException.class, () -> TicketRules.requireDescription(null));
+            assertThrows(BadRequestException.class, () -> TicketRules.requireDescription("        "));
+        }
+
+        @Test
+        void saysHowLongItActuallyWas() {
+            BadRequestException ex = assertThrows(BadRequestException.class,
+                    () -> TicketRules.requireDescription("qisa"));
+            assertTrue(ex.getMessage().contains("4"), ex.getMessage());
+        }
+    }
+
+    @Nested
     @DisplayName("Board columns")
     class Columns {
 
